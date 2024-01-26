@@ -66,12 +66,18 @@ struct AD5593R
     struct Read_write_values values;
 
     float _Vref;
+
     float _ADC_max;
     float _DAC_max;
 
     bool _ADC_2x_mode;
     bool _DAC_2x_mode;
 };
+
+#define SDA 10
+#define SCL 11
+#define i2c i2c1_inst
+static int addr = 0x10;
 
 void AD5593R_init(struct AD5593R *device, int a0)
 {
@@ -110,18 +116,20 @@ void AD5593R_init(struct AD5593R *device, int a0)
         gpio_put(device->_a0, 1); // Set the GPIO pin high
     }
 
-    // This example will use I2C0 on the default SDA and SCL pins (4, 5 on a Pico) -> physical pins 6 and 7.
-    i2c_init(i2c_default, 100 * 1000);
-    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
-    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+    // This example will use I2C0 on the default SDA and SCL pins (4, 5 on a Pico) -> hw pins 6 and 7.
+    i2c_init(&i2c, 100*1000);
+    gpio_set_function(SCL, GPIO_FUNC_I2C);
+    gpio_set_function(SDA, GPIO_FUNC_I2C);
+    
+    gpio_pull_up(SCL);
+    gpio_pull_up(SDA);
+    
     // Make the I2C pins available to picotool
-    bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
+    // bi_decl(bi_2pins_with_func(SDA, SCL, GPIO_FUNC_I2C));
 }
 
 void AD5593R_enable_internal_Vref(struct AD5593R *device)
-{
+{   
     // Enable selected device for writing
     device->_Vref = 2.5;
     device->_ADC_max = device->_Vref;
@@ -138,12 +146,9 @@ void AD5593R_enable_internal_Vref(struct AD5593R *device)
         device->_PCR_msbs = device->_PCR_msbs ^ 0x02;
     }
 
-    uint8_t buffer[3];
-    buffer[0] = _ADAC_POWER_REF_CTRL;
-    buffer[1] = device->_PCR_msbs;
-    buffer[2] = device->_PCR_lsbs;
+    uint8_t buf[] = {_ADAC_POWER_REF_CTRL, device->_PCR_msbs, device->_PCR_lsbs};
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, true);
+    i2c_write_blocking(&i2c, addr, buf, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -174,7 +179,7 @@ void AD5593R_disable_internal_Vref(struct AD5593R *device)
     buffer[1] = device->_PCR_msbs;
     buffer[2] = device->_PCR_lsbs;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -202,7 +207,7 @@ void AD5593R_set_ADC_max_2x_Vref(struct AD5593R *device)
     buffer[1] = device->_GPRC_msbs;
     buffer[2] = device->_GPRC_lsbs;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -231,7 +236,7 @@ void AD5593R_set_ADC_max_1x_Vref(struct AD5593R *device)
     buffer[1] = device->_GPRC_msbs;
     buffer[2] = device->_GPRC_lsbs;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -260,7 +265,7 @@ void AD5593R_set_DAC_max_2x_Vref(struct AD5593R *device)
     buffer[1] = device->_GPRC_msbs;
     buffer[2] = device->_GPRC_lsbs;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -289,7 +294,7 @@ void AD5593R_set_DAC_max_1x_Vref(struct AD5593R *device)
     buffer[1] = device->_GPRC_msbs;
     buffer[2] = device->_GPRC_lsbs;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -341,7 +346,7 @@ void AD5593R_configure_DAC(struct AD5593R *device, int channel)
     buffer[1] = 0x00;
     buffer[2] = device->_DAC_config;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -389,7 +394,7 @@ void AD5593R_write_DAC(struct AD5593R *device, int channel, float voltage)
     buffer[1] = data_msbs;
     buffer[2] = data_lsbs;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -418,7 +423,7 @@ float AD5593R_configure_ADC(struct AD5593R *device, int channel)
     buffer[1] = 0x00;
     buffer[2] = device->_ADC_config;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -458,15 +463,15 @@ float AD5593R_read_ADC(struct AD5593R *device, uint8_t channel)
 
     uint8_t data_channel = (1 << channel);
     uint8_t adc_sequence_cmd[] = {_ADAC_ADC_SEQUENCE, 0x02, data_channel};
-    i2c_write_blocking(i2c_default, device->_i2c_address, adc_sequence_cmd, sizeof(adc_sequence_cmd), false);
+    i2c_write_blocking(&i2c, device->_i2c_address, adc_sequence_cmd, sizeof(adc_sequence_cmd), false);
 
     uint8_t adc_read_cmd[] = {_ADAC_ADC_READ};
-    i2c_write_blocking(i2c_default, device->_i2c_address, adc_read_cmd, sizeof(adc_read_cmd), false);
+    i2c_write_blocking(&i2c, device->_i2c_address, adc_read_cmd, sizeof(adc_read_cmd), false);
 
     uint16_t data_bits = 0;
 
     uint8_t data[2];
-    i2c_read_blocking(i2c_default, device->_i2c_address, data, sizeof(data), false);
+    i2c_read_blocking(&i2c, device->_i2c_address, data, sizeof(data), false);
     data_bits = (data[0] & 0x0F) << 8 | data[1]; // 0x0F is to mask the 4 most signifigant bits
 
     if (device->_a0 > -1)
@@ -524,7 +529,7 @@ void ADD593R_configure_GPI(struct AD5593R *device, int channel)
     buffer[1] = 0x00;
     buffer[2] = device->_GPI_config;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -563,7 +568,7 @@ void ADD593R_configure_GPO(struct AD5593R *device, int channel)
     buffer[1] = 0x00;
     buffer[2] = device->_GPO_config;
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, buffer, 3, false);
+    i2c_write_blocking(&i2c, device->_i2c_address, buffer, 3, false);
 
     // Disable selected device for writing
     if (device->_a0 > -1)
@@ -591,10 +596,10 @@ bool *ADD593R_read_GPIs(struct AD5593R *device)
 
     uint8_t gpi_read_cmd[] = {_ADAC_GPIO_READ};
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, gpi_read_cmd, sizeof(gpi_read_cmd), false);
+    i2c_write_blocking(&i2c, device->_i2c_address, gpi_read_cmd, sizeof(gpi_read_cmd), false);
 
     uint8_t data[2];
-    i2c_read_blocking(i2c_default, device->_i2c_address, data, sizeof(data), false);
+    i2c_read_blocking(&i2c, device->_i2c_address, data, sizeof(data), false);
 
     // mask bits, build the word
     uint16_t data_bits = (data[0] & 0x0F) << 8;
@@ -643,8 +648,8 @@ void ADD593R_write_GPOs(struct AD5593R *device, bool *values)
         gpio_put(device->_a0, 0); // Set the GPIO pin low
     }
 
-    i2c_write_blocking(i2c_default, device->_i2c_address, _ADAC_GPIO_WR_DATA, sizeof(_ADAC_GPIO_WR_DATA), false);
-    i2c_write_blocking(i2c_default, device->_i2c_address, 0x00, sizeof(0x00), false);
+    i2c_write_blocking(&i2c, device->_i2c_address, _ADAC_GPIO_WR_DATA, sizeof(_ADAC_GPIO_WR_DATA), false);
+    i2c_write_blocking(&i2c, device->_i2c_address, 0x00, sizeof(0x00), false);
 
     if (device->_a0 > -1)
     {
@@ -652,43 +657,26 @@ void ADD593R_write_GPOs(struct AD5593R *device, bool *values)
     }
 }
 
-// main to test the functions
+// main to perform a basic test compiling for wifi chip
 int main()
 {
     bool my_DACs[8] = {1, 1, 1, 1, 0, 0, 0, 0};
     bool my_ADCs[8] = {0, 0, 0, 0, 1, 1, 1, 1};
 
     struct AD5593R device;
+
     stdio_init_all();
+
     if (cyw43_arch_init())
     {
         printf("Wi-Fi init failed");
         return -1;
     }
 
-    AD5593R_init(&device, 2);
-    sleep_ms(100);
+    AD5593R_init(&device, -1);
+        
     AD5593R_enable_internal_Vref(&device);
-    sleep_ms(100);
-
-    AD5593R_set_DAC_max_2x_Vref(&device);
-    sleep_ms(100);
-
-    AD5593R_set_ADC_max_2x_Vref(&device);
-    sleep_ms(100);
-
-    AD5593R_configure_DAC(&device, 2);
-    sleep_ms(100);
-
-    AD5593R_write_DAC(&device, 2, 1.25);
-    sleep_ms(100);
-
-    AD5593R_configure_ADCs(&device, my_ADCs, 4);
-    sleep_ms(100);
-
-    AD5593R_read_ADC(&device, 3);
-    sleep_ms(100);
-
+    
     while (true)
     {
         printf("led on");
